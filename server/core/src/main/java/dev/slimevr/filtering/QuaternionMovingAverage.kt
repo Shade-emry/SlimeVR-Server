@@ -64,6 +64,9 @@ class QuaternionMovingAverage(
 				// Applies the past rotations to the current rotation
 				rotBuffer?.forEach { quatBuf *= it }
 
+				// Ensure quaternions are in the same hemisphere before interpolation
+				quatBuf = ensureConsistentHemisphere(filteredQuaternion, quatBuf)
+
 				// Calculate how much to slerp
 				val amt = predictFactor * fpsTimer.timePerFrame
 
@@ -88,8 +91,11 @@ class QuaternionMovingAverage(
 
 			lastAmt = amt
 
+			// Ensure quaternions are in the same hemisphere before interpolation
+			val targetQuaternion = ensureConsistentHemisphere(smoothingQuaternion, latestQuaternion)
+
 			// Smooth towards the target rotation by the slerp factor
-			filteredQuaternion = smoothingQuaternion.interpR(latestQuaternion, amt)
+			filteredQuaternion = smoothingQuaternion.interpR(targetQuaternion, amt)
 		} else {
 			// No filtering; just keep track of rotations (for going over 180 degrees)
 			filteredQuaternion = latestQuaternion.twinNearest(smoothingQuaternion)
@@ -125,5 +131,12 @@ class QuaternionMovingAverage(
 		}
 		filteredQuaternion = q
 		addQuaternion(q)
+	}
+
+	/**
+	 * Ensures that two quaternions are in the same hemisphere by flipping one if necessary.
+	 */
+	private fun ensureConsistentHemisphere(reference: Quaternion, target: Quaternion): Quaternion {
+		return if (reference.dot(target) < 0) -target else target
 	}
 }
