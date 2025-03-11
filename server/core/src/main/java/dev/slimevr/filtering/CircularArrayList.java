@@ -2,116 +2,105 @@ package dev.slimevr.filtering;
 
 import java.util.*;
 
-
 /**
- * If you use this code, please consider notifying isak at du-preez dot com with
- * a brief description of your application.
- * <p>
- * This is free and unencumbered software released into the public domain.
- * Anyone is free to copy, modify, publish, use, compile, sell, or distribute
- * this software, either in source code form or as a compiled binary, for any
- * purpose, commercial or non-commercial, and by any means.
+ * A circular buffer implementation using ArrayList for efficient random access.
+ * This class is thread-unsafe; external synchronization is required for concurrent access.
  */
-
 public class CircularArrayList<E> extends AbstractList<E> implements RandomAccess {
 
-	private final int n; // buffer length
-	private final List<E> buf; // a List implementing RandomAccess
-	private int head = 0;
-	private int tail = 0;
+    private final int capacity; // Maximum number of elements the buffer can hold
+    private final List<E> buffer; // Underlying storage
+    private int head = 0; // Index of the first element
+    private int tail = 0; // Index after the last element
 
-	public CircularArrayList(int capacity) {
-		n = capacity + 1;
-		buf = new ArrayList<>(Collections.nCopies(n, null));
-	}
+    public CircularArrayList(int capacity) {
+        if (capacity <= 0) {
+            throw new IllegalArgumentException("Capacity must be positive");
+        }
+        this.capacity = capacity + 1; // Extra slot for circular behavior
+        this.buffer = new ArrayList<>(Collections.nCopies(this.capacity, null));
+    }
 
-	public int capacity() {
-		return n - 1;
-	}
+    public int capacity() {
+        return capacity - 1;
+    }
 
-	private int wrapIndex(int i) {
-		int m = i % n;
-		if (m < 0) { // java modulus can be negative
-			m += n;
-		}
-		return m;
-	}
+    private int wrapIndex(int index) {
+        // Ensure index is within bounds using modulo arithmetic
+        return (index % capacity + capacity) % capacity;
+    }
 
-	// This method is O(n) but will never be called if the
-	// CircularArrayList is used in its typical/intended role.
-	private void shiftBlock(int startIndex, int endIndex) {
-		assert (endIndex > startIndex);
-		for (int i = endIndex - 1; i >= startIndex; i--) {
-			set(i + 1, get(i));
-		}
-	}
+    @Override
+    public int size() {
+        return (tail - head + capacity) % capacity;
+    }
 
-	@Override
-	public int size() {
-		return tail - head + (tail < head ? n : 0);
-	}
+    @Override
+    public E get(int index) {
+        if (index < 0 || index >= size()) {
+            throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size());
+        }
+        return buffer.get(wrapIndex(head + index));
+    }
 
-	@Override
-	public E get(int i) {
-		if (i < 0 || i >= size()) {
-			throw new IndexOutOfBoundsException();
-		}
-		return buf.get(wrapIndex(head + i));
-	}
+    public E getLatest() {
+        if (size() == 0) {
+            throw new NoSuchElementException("Buffer is empty");
+        }
+        return buffer.get(wrapIndex(tail - 1));
+    }
 
-	public E getLatest() {
-		return buf.get(wrapIndex(head + size() - 1));
-	}
+    @Override
+    public E set(int index, E element) {
+        if (index < 0 || index >= size()) {
+            throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size());
+        }
+        return buffer.set(wrapIndex(head + index), element);
+    }
 
-	@Override
-	public E set(int i, E e) {
-		if (i < 0 || i >= size()) {
-			throw new IndexOutOfBoundsException();
-		}
-		return buf.set(wrapIndex(head + i), e);
-	}
+    @Override
+    public void add(int index, E element) {
+        if (index < 0 || index > size()) {
+            throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size());
+        }
+        if (size() == capacity - 1) {
+            throw new IllegalStateException("Buffer is full");
+        }
 
-	@Override
-	public void add(int i, E e) {
-		int s = size();
-		if (s == n - 1) {
-			throw new IllegalStateException(
-				"CircularArrayList is filled to capacity. "
-					+ "(You may want to remove from front"
-					+ " before adding more to back.)"
-			);
-		}
-		if (i < 0 || i > s) {
-			throw new IndexOutOfBoundsException();
-		}
-		tail = wrapIndex(tail + 1);
-		if (i < s) {
-			shiftBlock(i, s);
-		}
-		set(i, e);
-	}
+        // Shift elements to make space for the new element
+        if (index < size()) {
+            for (int i = size(); i > index; i--) {
+                buffer.set(wrapIndex(head + i), get(i - 1));
+            }
+        }
 
-	@Override
-	public E remove(int i) {
-		int s = size();
-		if (i < 0 || i >= s) {
-			throw new IndexOutOfBoundsException();
-		}
-		E e = get(i);
-		if (i > 0) {
-			shiftBlock(0, i);
-		}
-		head = wrapIndex(head + 1);
-		return e;
-	}
+        // Insert the new element
+        buffer.set(wrapIndex(head + index), element);
+        tail = wrapIndex(tail + 1);
+    }
 
-	public E removeLast() {
-		int s = size();
-		if (0 == s) {
-			throw new IndexOutOfBoundsException();
-		}
-		E e = get(0);
-		head = wrapIndex(head + 1);
-		return e;
-	}
+    @Override
+    public E remove(int index) {
+        if (index < 0 || index >= size()) {
+            throw new IndexOutOfBoundsException("Index: " + index + ", Size: " + size());
+        }
+
+        E removedElement = get(index);
+
+        // Shift elements to fill the gap
+        if (index > 0) {
+            for (int i = index; i < size() - 1; i++) {
+                set(i, get(i + 1));
+            }
+        }
+
+        tail = wrapIndex(tail - 1);
+        return removedElement;
+    }
+
+    public void clear() {
+        head = 0;
+        tail = 0;
+        Collections.fill(buffer, null);
+    }
 }
